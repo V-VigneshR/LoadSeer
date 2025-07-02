@@ -40,3 +40,4 @@ LoadSeer is  deployed and tested on:
 - Intelligent traffic shaping for SaaS or high-frequency APIs
 
 ---
+NOTE: The model is still under improvement for further enhancement 
