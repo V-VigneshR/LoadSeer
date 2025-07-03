@@ -2,6 +2,7 @@
 """Background monitoring and scaling threads"""
 
 import time
+import threading
 from datetime import datetime
 from config import *
 
