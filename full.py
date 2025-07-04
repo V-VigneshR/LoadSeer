@@ -25,7 +25,7 @@ app = Flask(__name__, static_folder=None)
 # Constants
 T1 = 125
 T2 = 225
-BACKEND_SERVER = "http://load-balancer-1524502438.ap-south-1.elb.amazonaws.com"
+BACKEND_SERVER = "http://load-balancer-559775012.ap-south-1.elb.amazonaws.com"
 INSTANCE_START_TIMEOUT = 300
 PREDICTION_HORIZON = 300
 
@@ -50,9 +50,9 @@ TARGET_GROUPS = {
 }
 
 INSTANCE_IDS = {
-    'small': ['i-0e198a8e8ed3c264f'],
-    'medium': ['i-017b9c685be6436be'],
-    'large': ['i-04dcd92ab938b2515']
+    'small': ['i-0573e267fa2a32178'],
+    'medium': ['i-05cbf9d4aee064cf3'],
+    'large': ['i-0ffae39c2cb8863e9']
 }
 
 # State Management
@@ -179,7 +179,7 @@ class PersistentTrafficPredictor:
         self.model = XGBRegressor(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42)
         self.scaler = StandardScaler()
         self.is_trained = False
-        self.training_data = deque(maxlen=2000)  # Increased capacity
+        self.training_data = deque(maxlen=5000)  # Increased capacity
         self.feature_window = 30
         self.last_retrain = datetime.now()
         self.last_s3_sync = datetime.now()
@@ -213,35 +213,53 @@ class PersistentTrafficPredictor:
                 print(f"[S3] Error creating bucket: {str(e)}")
 
     def save_to_s3(self):
-        """Save model, scaler, and training data to S3"""
+        """Save model, scaler, and training data to S3 - FIXED"""
         try:
             self.create_s3_bucket_if_needed()
+            
+            print(f"[S3] Starting save with {len(self.training_data)} training samples")
 
             # Save model
             if self.is_trained:
-                model_bytes = pickle.dumps(self.model)
-                s3.put_object(Bucket=S3_BUCKET, Key=S3_MODEL_KEY, Body=model_bytes)
+                try:
+                    model_bytes = pickle.dumps(self.model)
+                    s3.put_object(Bucket=S3_BUCKET, Key=S3_MODEL_KEY, Body=model_bytes)
+                    print("[S3] Model saved successfully")
 
-                scaler_bytes = pickle.dumps(self.scaler)
-                s3.put_object(Bucket=S3_BUCKET, Key=S3_SCALER_KEY, Body=scaler_bytes)
+                    scaler_bytes = pickle.dumps(self.scaler)
+                    s3.put_object(Bucket=S3_BUCKET, Key=S3_SCALER_KEY, Body=scaler_bytes)
+                    print("[S3] Scaler saved successfully")
+                except Exception as e:
+                    print(f"[S3] Model save error: {e}")
 
             # Save training data (convert deque to list for JSON serialization)
             training_data_list = []
             for item in self.training_data:
-                training_data_list.append({
-                    'features': item['features'],
-                    'target': item['target'],
-                    'timestamp': item['timestamp'].isoformat()
-                })
+                try:
+                    training_data_list.append({
+                        'features': item['features'],
+                        'target': item['target'],
+                        'timestamp': item['timestamp'].isoformat()
+                    })
+                except Exception as e:
+                    print(f"[S3] Error processing training item: {e}")
+                    continue
 
-            data_json = json.dumps(training_data_list)
-            s3.put_object(Bucket=S3_BUCKET, Key=S3_DATA_KEY, Body=data_json)
+            if training_data_list:
+                try:
+                    data_json = json.dumps(training_data_list)
+                    s3.put_object(Bucket=S3_BUCKET, Key=S3_DATA_KEY, Body=data_json)
+                    print(f"[S3] Training data saved: {len(training_data_list)} samples")
+                except Exception as e:
+                    print(f"[S3] Training data save error: {e}")
 
             self.last_s3_sync = datetime.now()
-            print(f"[S3] Saved model and {len(self.training_data)} training samples")
+            print(f"[S3] Save completed at {self.last_s3_sync}")
 
         except Exception as e:
             print(f"[S3] Save error: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def load_from_s3(self):
         """Load model, scaler, and training data from S3"""
@@ -444,17 +462,25 @@ class PersistentTrafficPredictor:
             return None
 
     def add_training_data(self, features, actual_rate):
-        """Add training data and sync to S3 periodically"""
+        """Add training data and sync to S3 periodically - FIXED"""
         if features is not None:
-            self.training_data.append({
+            training_point = {
                 'features': features,
                 'target': actual_rate,
                 'timestamp': datetime.now()
-            })
+            }
+            self.training_data.append(training_point)
+            
+            # Debug print to verify data is being added
+            if len(self.training_data) % 10 == 0:  # Print every 10 samples
+                print(f"[TRAINING] Added sample, total: {len(self.training_data)}")
 
-            # Periodic S3 sync
-            if datetime.now() - self.last_s3_sync > self.sync_interval:
-                threading.Thread(target=self.save_to_s3).start()
+            # More frequent S3 sync - every 2 minutes instead of 5
+            sync_interval = timedelta(minutes=2)
+            if datetime.now() - self.last_s3_sync > sync_interval:
+                print(f"[S3] Triggering sync - {len(self.training_data)} samples")
+                # Use synchronous save instead of threading to avoid issues
+                self.save_to_s3()
 
     def train_model(self):
         """Enhanced XGBoost training with cross-validation and robust validation - IMPROVED"""
@@ -881,13 +907,13 @@ def warmup_and_switch(target_group_to_use):
 
 # Enhanced background monitor function
 def ml_background_monitor():
-    """Enhanced monitoring with performance tracking - IMPROVED ERROR HANDLING"""
+    """Enhanced monitoring with performance tracking - FIXED TRAINING DATA ADDITION"""
     last_prediction = None
     prediction_log_counter = 0
 
     while True:
         try:
-            # FIX 4: Safer rate calculation
+            # Safe rate calculation
             try:
                 current_rate = get_arrival_rate()
                 if not isinstance(current_rate, (int, float)) or current_rate < 0:
@@ -917,10 +943,21 @@ def ml_background_monitor():
             except Exception as e:
                 print(f"[MONITOR] Feature extraction error: {e}")
 
+            # FIXED: Always add training data when we have valid features and rate
+            if features is not None and current_rate >= 0:
+                try:
+                    predictor.add_training_data(features, current_rate)
+                    # Debug: Print training data count periodically
+                    if len(predictor.training_data) % 25 == 0:
+                        print(f"[MONITOR] Training data count: {len(predictor.training_data)}")
+                except Exception as e:
+                    print(f"[MONITOR] Training data addition error: {e}")
+
             # Log prediction details every 10 iterations (50 seconds)
             if prediction_log_counter % 10 == 0:
                 print(f"\n[PREDICTION-LOG] Current rate: {current_rate:.2f}")
                 print(f"[PREDICTION-LOG] History length: {len(traffic_history)}")
+                print(f"[PREDICTION-LOG] Training samples: {len(predictor.training_data)}")
                 print(f"[PREDICTION-LOG] Features valid: {features is not None}")
 
             # Safe prediction
@@ -934,7 +971,8 @@ def ml_background_monitor():
                 pred_str = f"{current_prediction:.2f}" if current_prediction is not None else "None"
                 print(f"[PREDICTION-LOG] Predicted rate: {pred_str}")
                 print(f"[PREDICTION-LOG] Model trained: {predictor.is_trained}")
-                print(f"[PREDICTION-LOG] Training samples: {len(predictor.training_data)}\n")
+                print(f"[PREDICTION-LOG] Last S3 sync: {predictor.last_s3_sync}")
+                print(f"[PREDICTION-LOG] S3 sync interval check: {datetime.now() - predictor.last_s3_sync}\n")
 
             # Track prediction accuracy
             if last_prediction is not None and current_rate > 0:
@@ -950,13 +988,6 @@ def ml_background_monitor():
             last_prediction = current_prediction
             prediction_log_counter += 1
 
-            # Safe training data addition
-            if features is not None:
-                try:
-                    predictor.add_training_data(features, current_rate)
-                except Exception as e:
-                    print(f"[MONITOR] Training data addition error: {e}")
-
             # Safe scaling decision tracking
             try:
                 if len(traffic_history) >= 2:
@@ -971,10 +1002,10 @@ def ml_background_monitor():
 
             # Safe model training triggers
             try:
-                if len(predictor.training_data) >= 50 and not predictor.is_trained:  # Reduced from 20
+                if len(predictor.training_data) >= 50 and not predictor.is_trained:
                     print("[ML] Initial training...")
                     predictor.train_model()
-                elif len(predictor.training_data) % 100 == 0 and len(predictor.training_data) > 0:  # Reduced frequency
+                elif len(predictor.training_data) % 100 == 0 and len(predictor.training_data) > 0:
                     print("[ML] Retraining with new data...")
                     predictor.train_model()
             except Exception as e:
@@ -986,7 +1017,22 @@ def ml_background_monitor():
             print(f"[MONITOR] Main loop error: {str(e)}")
             import traceback
             traceback.print_exc()
-            time.sleep(10)  # Longer sleep on critical error
+            time.sleep(10)
+
+# Add this new endpoint to manually trigger S3 sync
+@app.route('/force-s3-sync')
+def force_s3_sync():
+    """Force immediate S3 sync"""
+    try:
+        print(f"[FORCE-SYNC] Current training samples: {len(predictor.training_data)}")
+        predictor.save_to_s3()
+        return jsonify({
+            "status": "S3 sync completed",
+            "training_samples": len(predictor.training_data),
+            "last_sync": predictor.last_s3_sync.isoformat()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
             
             
 def background_scaler():
