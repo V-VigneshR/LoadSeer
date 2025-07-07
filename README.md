@@ -1,42 +1,47 @@
 # LoadSeer 
-**ML-Enhanced Dynamic Load Balancer for Real-Time Traffic Prediction and Autoscaling**
+**Proactive Cloud Autoscaling through ML-Based Traffic Prediction**
 
-LoadSeer is an intelligent load balancer powered by XGBoost regression models and adaptive online retraining. It analyzes historical traffic patterns and system metrics to predict future load and adjust system capacity dynamically.
+LoadSeer is an intelligent autoscaling controller powered by XGBoost regression and adaptive online retraining. It analyzes real-time traffic patterns to anticipate demand and dynamically scale EC2 target groups accordingly. While not a traditional load balancer, LoadSeer complements them by optimizing backend capacity based on predictive insights.
 
 ##  Key Features
 
--  **High Prediction Accuracy**  
-  Achieves ~5% MAPE (Mean Absolute Percentage Error), 100% accuracy within ±25% range, and R² score of 0.72+ — ensuring high-confidence autoscaling decisions.
+- **High Prediction Accuracy**  
+  Achieves <5% MAPE (Mean Absolute Percentage Error), >98% scaling accuracy within ±25% range, and R² scores consistently above 0.72.
 
--  **Adaptive Retraining**  
-  Automatically retrains the model during runtime based on new traffic samples while avoiding data leakage using delay-window evaluation.
+- **Adaptive Retraining**  
+  Continuously retrains on new traffic samples with safeguards against data leakage using delay-window validation.
 
--  **Real-Time Traffic Insights**  
-  Provides accurate feature extraction including moving averages, rate of change, hour-of-day/time-based signals, and group activity labels (e.g., `small`, `medium`, `high`).
+- **Real-Time Traffic Intelligence**  
+  Extracts engineered features such as rate of change, rolling averages, time-of-day trends, and usage phase labels (`ramp_up`, `peak`, `ramp_down`).
 
--  **Lightweight & Cloud-Native**  
-  Built with Python and Flask, easily deployable on EC2 instances or containers. No heavyweight ML infra needed.
+- **Lightweight & Cloud-Native**  
+  Python-based (Flask + XGBoost), deployable on EC2 or Docker. No GPU or heavy ML infra required.
 
--  **Model Health Dashboard (Optional)**  
-  Logs model metrics like RMSE, R², MAPE, and sample counts — perfect for live monitoring or Grafana ingestion.
+- **Model Health Monitoring**  
+  Logs metrics such as MAE, R², MAPE, and accuracy — exportable to dashboards like Grafana.
 
 ##  Tech Stack
 
 - Python 3.x
-- XGBoost for regression
-- Pandas/Numpy (for historical sequence processing)
-- Flask API (for serving predictions)
-- JMeter compatible hooks for load testing environments
+- XGBoost (for regression)
+- Pandas / NumPy (sequence processing)
+- Flask API (prediction service)
+- Apache JMeter (traffic simulation integration)
 
-##  Deployment
+##  Deployment Environment
 
-LoadSeer is  deployed and tested on:
-- AWS EC2 (Amazon Linux 2)
+- Tested and deployed on:  
+  **AWS EC2 (Amazon Linux 2)**  
+  (Uses Boto3 to manage EC2 scaling based on predicted traffic)
 
 ##  Use Cases
 
-- Autoscaling policies in microservice clusters
-- Load simulation environments with CI/CD pipelines
-- Intelligent traffic shaping for SaaS or high-frequency APIs
+- Smart autoscaling for microservice clusters
+- Traffic-aware backend provisioning in CI/CD testbeds
+- ML-powered control layer over existing load balancers
+- Prototype for ML-integrated DevOps workflows
 
 ---
+
+>  **Note**: LoadSeer is a predictive autoscaling companion, not a drop-in replacement for conventional load balancers like ALB/NLB.
+
